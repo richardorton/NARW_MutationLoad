@@ -1130,16 +1130,9 @@ Figure_4 #view multi-panel figure
 ######################################################################
 #                                                                    #
 #    gene set enrichment with Getsalt                                #
-#                 REALIZED female burden                             #
+#                                                                    #
 ######################################################################
 
-
-
-enrichResult <- WebGestaltR(enrichMethod="ORA", organism="hsapiens",
-                            enrichDatabase="network_PPI_BIOGRID", interestGeneFile="/Volumes/cetacea/Genetic_load/_enrichment/gene.prelim.txt",
-                            interestGeneType="genesymbol", sigMethod="top", topThr=10,
-                            outputDirectory=getwd(), highlightSeedNum=10,
-                            networkConstructionMethod="Network_Retrieval_Prioritization")
 
 listOrganism()
 
@@ -1156,7 +1149,7 @@ enrichResult <- WebGestaltR(enrichMethod="NTA", organism="btaurus",
                             networkConstructionMethod="Network_Expansion")
 
 
-######### plotting results #########3
+######### plotting results #########
 
 
 ORA_bp <- read.table("/Volumes/cetacea/Genetic_load/_enrichment/Project_wg_result1690904587/goslim_summary_wg_result1690904587_bp.txt", 
@@ -1181,9 +1174,6 @@ eone <- ORA_bp %>%
   scale_y_continuous(breaks= pretty_breaks())
 
 
-
-
-
 ORA_cc <- read.table("/Volumes/cetacea/Genetic_load/_enrichment/Project_wg_result1690904587/goslim_summary_wg_result1690904587_cc.txt", 
                      header = F,
                      sep="\t")
@@ -1206,8 +1196,6 @@ etwo <- ORA_cc %>%
   scale_y_continuous(breaks= pretty_breaks())
 
 
-
-
 ORA_mf <- read.table("/Volumes/cetacea/Genetic_load/_enrichment/Project_wg_result1690904587/goslim_summary_wg_result1690904587_mf.txt", 
                      header = F,
                      sep="\t")
@@ -1228,8 +1216,6 @@ ethree <- ORA_mf %>%
   #xlab("Biological process") +
   scale_y_continuous(breaks= pretty_breaks()) +
   theme(legend.position = "none")  
-
-
 
 
 
@@ -1256,10 +1242,6 @@ efour <- ORA_enrichment %>%
 #theme(axis.title.y = element_text(angle = 0, hjust = 0, margin = margin(r = -125)))
 
 
-
-
-
-
 NTA_enrichment <- read.table("/Volumes/cetacea/Genetic_load/_enrichment/wg_result1690922182/wg_result1690922182.network_PPI_BIOGRID.Network_Expansion_enrichedResult.txt", 
                              header = T,
                              sep="\t")
@@ -1284,9 +1266,6 @@ efive <- NTA_enrichment %>%
 #theme(axis.title.y = element_text(angle = 0, hjust = 0, margin = margin(r = -125)))
 
 
-
-
-
 Figure_5 <- (((eone | etwo | ethree) ) | (efour / efive)) + 
   plot_layout(ncol=4,widths =c(3,3,2.5,2)) +
   plot_annotation(tag_levels = 'A') #add figure labels
@@ -1297,52 +1276,5 @@ Figure_5 #view multi-panel figure
 
 
 
-
-
-
-
-
-
-#########################################
-#### Rxy (per site) version two #########
-#########################################
-
-## read in site genetic load data ##
-
-# autosomes
-autosomes_inter_site_load_data <- read.table("/Volumes/cetacea/Genetic_load/interspecific/autosomes.inter.site.load", header = T)
-head(autosomes_inter_site_load_data)
-autosomes_inter_site_load_data$Chromosome <- 'Autosomes'
-
-# X
-X_inter_site_load_data <- read.table("/Volumes/cetacea/Genetic_load/interspecific/X.inter.site.load", header = T)
-head(X_inter_site_load_data)
-X_inter_site_load_data$Chromosome <- 'X chromosome'
-
-
-inter_site_load_data <- rbind(autosomes_inter_site_load_data, X_inter_site_load_data)
-head(inter_site_load_data)
-tail(inter_site_load_data)
-
-
-inter_site_load_data_B <- melt(data = inter_site_load_data, id.vars = c("Chromosome", "POS", "Population", "Impact"), 
-                   variable.name = "Estimate", 
-                   variable.value = "value")
-
-head(inter_site_load_data_B)
-tail(inter_site_load_data_B)
-
-inter_site_load_data_C <- inter_site_load_data_B[which(inter_site_load_data_B$Estimate == "alternate_allele_frequency"),]
-head(inter_site_load_data_C)
-
-inter_site_load_data_D <- subset(inter_site_load_data_C, select = -c(Estimate, POS))
-head(inter_site_load_data_D)
-
-inter_site_load_data_E <- inter_site_load_data_D %>% spread(Population, value)
-head(inter_site_load_data_E)
-
-agg_Rxy_data_B$NARW_SRW <- agg_Rxy_data_B$NARW/agg_Rxy_data_B$SRW
-agg_Rxy_data_B$NARW_BH <- agg_Rxy_data_B$NARW/agg_Rxy_data_B$BH
-agg_Rxy_data_B$SRW_BH <- agg_Rxy_data_B$SRW/agg_Rxy_data_B$BH
 
 
