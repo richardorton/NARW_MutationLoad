@@ -6,3 +6,6 @@ Both command line and R scrips (used for plotting and statistical analyses) are 
 Note that data were independently analyzed for the autosomes and X chromosomes. Seperate command line scripts will be available for each genomic region.
 
 Scripts are also divided by interspecific and NARW-specific analyses.
+
+
+*apologies for the mess. Feel free to contact @ richard.orton@smu.ca with any questions.
