@@ -2,13 +2,6 @@
 ### Richard W. Orton
 ### May 7th, 2023
 ########################
-## this is the readme and code for analyzing allele frequencies, diversity, and load for the autosomes
-## the processing of data is a different readme 
-
-
-
-
-
 
 ###################################
 ##               X               ##
@@ -205,15 +198,6 @@ bcftools plugin counts high.vcf > high.summary.counts
 
 
 
-
-
-
-
-
-
-
-
-
 ##########################################################################################
                     ######################################################
                     ##            Diversity and summary stats           ##
@@ -230,12 +214,6 @@ pixy --stats pi fst dxy \
 --window_size 100000
 ################################################################################################################################
 
-
-
-
-
-
-
 #!/bin/bash
 
 #SBATCH --time=4:00:00
@@ -248,12 +226,7 @@ module load tabix
 module load vcftools
 module load bcftools
 
-
-
-
 cd /home/rorton/scratch/CSEE/interspecific/X
-
-
 
 
 #####################################################################################
@@ -337,17 +310,9 @@ cat X_NARW*  | tr / $'\t' > NARW.allele_frequencies
 cat *.allele_frequencies  | tr / $'\t' > ALL.allele_frequencies
 
 
-
-
-
-
-
-
 ##########################################################################
 ###          Individual genotype and allele frequenceies              ####
 ##########################################################################
-
-
 
 
 cd /home/rorton/scratch/CSEE/interspecific/X
@@ -399,9 +364,6 @@ cat X.NARW* |sed 's/\#	//g'  | sed 's/ //g' > X_NARW.all.indv.AF
 
 
 cat X_BH.all.indv.AF X_SRW.all.indv.AF X_NARW.all.indv.AF > X_ALL.all.indv.AF
-
-
-
 
 
 
