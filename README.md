@@ -8,4 +8,4 @@ Note that data were independently analyzed for the autosomes and X chromosomes. 
 Scripts are also divided by interspecific and NARW-specific analyses.
 
 
-*apologies for the mess. Feel free to contact @ richard.orton@smu.ca with any questions.
+*Feel free to contact @ richard.orton@smu.ca with any questions.
