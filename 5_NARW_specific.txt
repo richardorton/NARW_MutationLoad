@@ -1,0 +1,1013 @@
+
+
+##########################################################################################
+                            ################################
+                            ##      NARW females          ##
+                            ################################
+##########################################################################################
+
+
+
+## autosomes ##
+
+###################################
+### filter and parse vcf files ####
+###################################
+
+#!/bin/bash
+
+#SBATCH --time=8:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load vcftools
+module load bcftools
+module load java/17.0.2
+
+
+### remove any sites that have any missing data
+
+
+#vcftools --vcf autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.recode.vcf --max-missing 1 --recode --recode-INFO-all --out autosomes/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing
+
+
+
+########################
+### change directory ###
+#########################
+
+cd /home/rorton/scratch/CSEE/gVCF
+
+#########################
+
+
+#vcftools --vcf autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf --missing-indv
+bcftools plugin counts autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz > NARW_autosome_stats/CSEE.autosomes.counts
+
+
+
+#########################
+###   Individual F    ###
+#########################
+
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --het --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/ALL
+
+
+#########################
+###   Windowed Pi     ###
+#########################
+
+## run this on laptop in Pixy 100kb windows
+
+
+
+
+
+
+## Annotate with SnpEFF ##
+/home/rorton/snpEff/scripts/snpEff blue_whale /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz  > /home/rorton/scratch/CSEE/NARW_specific/autosomes/annotated.autosomes.NARW.vcf
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes/
+
+### filter out fixed sites ###
+vcftools --vcf /home/rorton/scratch/CSEE/NARW_specific/autosomes/annotated.autosomes.NARW.vcf --maf .001 --recode --recode-INFO-all --out annotated.autosomes.NARW.segregating
+bcftools plugin counts annotated.autosomes.NARW.segregating.recode.vcf > annotated.autosomes.NARW.segregating.counts
+
+
+### keep multi allelic sites to be analyzed ###
+bcftools norm -m - annotated.autosomes.NARW.segregating.recode.vcf Oz -o annotated.autosomes.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts annotated.autosomes.NARW.segregating.parsed.vcf.gz > NARW.autosomes.0missing.segregating.parsed.counts
+
+
+#### parse annotated NARW vcf ###
+bcftools view -e 'ANN~"LOW" || ANN~"MODERATE" || ANN~"HIGH"' annotated.autosomes.NARW.segregating.parsed.vcf.gz -Ov -o intermediate.vcf 
+bcftools view -i 'ANN~"MODIFIER"' -o modifier.vcf -Ov intermediate.vcf
+bcftools plugin counts modifier.vcf >  modifier.counts
+
+bcftools view -i 'ANN~"LOW"' -o low.vcf -Ov annotated.autosomes.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts low.vcf > low.counts
+
+bcftools view -i 'ANN~"MODERATE"' -o moderate.vcf -Ov annotated.autosomes.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts moderate.vcf > moderate.counts
+
+bcftools view -i 'ANN~"HIGH"' -o high.vcf -Ov annotated.autosomes.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts high.vcf > high.counts
+
+
+
+
+#############################################
+###      Site Fst per impact category    ####
+#############################################
+
+vcftools --vcf modifier.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/modifier
+vcftools --vcf moderate.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/moderate
+vcftools --vcf high.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/high
+vcftools --vcf low.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/low
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes/differentiation 
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }' modifier.weir.fst  | sed '0,/Modifier/{s/Modifier/Impact/}'   > autosomes.modifier.fst
+awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }' low.weir.fst            | sed '0,/Low/{s/Low/Impact/}'             > autosomes.low.fst
+awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }' moderate.weir.fst  | sed '0,/Moderate/{s/Moderate/Impact/}'   > autosomes.moderate.fst
+awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }' high.weir.fst          | sed '0,/High/{s/High/Impact/}'           > autosomes.high.fst
+
+
+
+
+
+
+##########################################################################
+###      Site HWE (and allele/genotype counts) per impact category    ####
+##########################################################################
+
+### HIGH fecund ###
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/high.pop > vcftools --vcf modifier.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/HIGH.modifier
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/high.pop > vcftools --vcf low.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/HIGH.low
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/high.pop > vcftools --vcf moderate.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/HIGH.moderate
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/high.pop > vcftools --vcf high.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/HIGH.high
+
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.modifier.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'      | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_HIGH.modifier.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.low.hwe            | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'           | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Low/{s/Low/Impact/}'                       > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_HIGH.low.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.moderate.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'      | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_HIGH.moderate.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.high.hwe           | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'          | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/High/{s/High/Impact/}'                     > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_HIGH.high.AF
+
+
+
+### LOW fecund ###
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/low.pop > vcftools --vcf modifier.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/LOW.modifier
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/low.pop > vcftools --vcf low.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/LOW.low
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/low.pop > vcftools --vcf moderate.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/LOW.moderate
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/low.pop > vcftools --vcf high.vcf --hardy --out /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/LOW.high
+
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.modifier.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'      | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_LOW.modifier.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.low.hwe            | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'           | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Low/{s/Low/Impact/}'                       > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_LOW.low.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.moderate.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'      | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_LOW.moderate.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.high.hwe           | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'          | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/High/{s/High/Impact/}'                     > /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats/autosomes_LOW.high.AF
+
+
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats
+
+
+cat autosomes_LOW*   | tr / $'\t' > low_fecund.allele_frequencies
+cat autosomes_HIGH*  | tr / $'\t' > high_fecund.allele_frequencies
+
+
+
+
+
+
+##########################################################################
+###          Individual genotype and allele frequenceies              ####
+##########################################################################
+
+#!/bin/bash
+
+#SBATCH --time=8:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load vcftools
+module load bcftools
+module load java/17.0.2
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes
+
+
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop modifier.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/LOW.modifier.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop low.vcf       | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/LOW.low.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop moderate.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/LOW.moderate.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop high.vcf      | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/LOW.high.stats
+
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop modifier.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/HIGH.modifier.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop low.vcf       | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/HIGH.low.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop moderate.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/HIGH.moderate.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop high.vcf      | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats/HIGH.high.stats
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats
+
+sed '1d' LOW.modifier.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'               | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'            | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}' > LOW.modifier.indv.AF
+sed '1d' LOW.low.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'                    | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'                | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Low/{s/Low/Impact/}' > LOW.low.indv.AF
+sed '1d' LOW.moderate.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'               | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'           | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}' > LOW.moderate.indv.AF
+sed '1d' LOW.high.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'                   | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'               | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/High/{s/High/Impact/}' > LOW.high.indv.AF
+
+
+sed '1d' HIGH.modifier.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'            | sed '0,/HIGH/{s/HIGH/Population/}'  | sed '0,/Modifier/{s/Modifier/Impact/}' > HIGH.modifier.indv.AF
+sed '1d' HIGH.low.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'                  | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'                | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Low/{s/Low/Impact/}' > HIGH.low.indv.AF
+sed '1d' HIGH.moderate.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'           | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}' > HIGH.moderate.indv.AF
+sed '1d' HIGH.high.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'                 | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'               | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/High/{s/High/Impact/}' > HIGH.high.indv.AF
+
+
+cat LOW*AF | sed 's/\#	//g'  | sed 's/ //g' > autosomes.LOW.all.indv.AF
+cat HIGH*AF |sed 's/\#	//g'  | sed 's/ //g' > autosomes.HIGH.all.indv.AF
+
+cat autosomes.LOW.all.indv.AF autosomes.HIGH.all.indv.AF > autosomes_ALL.all.indv.AF
+
+
+
+
+
+
+####################################################################################################################################################################################
+####################################################################################################################################################################################
+####################################################################################################################################################################################
+
+
+## X ##
+
+###################################
+### filter and parse vcf files ####
+###################################
+
+#!/bin/bash
+
+#SBATCH --time=4:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load vcftools
+module load bcftools
+module load java/17.0.2
+
+
+########################
+### change directory ###
+#########################
+
+cd /home/rorton/scratch/CSEE/gVCF
+
+#########################
+
+
+#vcftools --vcf autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf --missing-indv
+bcftools plugin counts X.all_sites.RM.MQ30.DP1400.gq25.dp5.snps.FEM.g.NARW.0missing.recode.vcf.gz > NARW_X_stats/CSEE.X.counts
+
+
+
+#########################
+###   Individual F    ###
+#########################
+
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF//X.all_sites.RM.MQ30.DP1400.gq25.dp5.snps.FEM.g.NARW.0missing.recode.vcf.gz --het --out /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/ALL
+
+
+#########################
+###   Windowed Pi     ###
+#########################
+
+## run this on laptop in Pixy 100kb windows
+
+
+
+
+
+
+## Annotate with SnpEFF ##
+#/home/rorton/snpEff/scripts/snpEff blue_whale /home/rorton/scratch/CSEE/gVCF/X.all_sites.RM.MQ30.DP1400.gq25.dp5.snps.FEM.g.NARW.0missing.recode.vcf.gz  > /home/rorton/scratch/CSEE/NARW_specific/X/annotated.X.NARW.vcf
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X
+
+### filter out fixed sites ###
+vcftools --vcf /home/rorton/scratch/CSEE/NARW_specific/X/annotated.X.NARW.vcf --maf .01 --recode --recode-INFO-all --out annotated.X.NARW.segregating
+bcftools plugin counts annotated.X.NARW.segregating.recode.vcf
+
+
+######################################################################
+### WORKING VCF statistics for X_annotation.derived.parsed.vcf.gz ####
+######################################################################
+
+###############################
+#Number of samples:10         #
+#Number of SNPs:   28668      #
+#Number of INDELs: 0          #
+#Number of MNPs:   0          #
+#Number of others: 0          #
+#Number of sites:  36497      #
+###############################
+
+
+
+### keep multi allelic sites to be analyzed ###
+bcftools norm -m - annotated.X.NARW.segregating.recode.vcf Oz -o annotated.X.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts annotated.X.NARW.segregating.parsed.vcf.gz > NARW.X.0missing.segregating.parsed.counts
+
+
+#Number of samples: 10
+#Number of SNPs:    28777
+#Number of INDELs:  0
+#Number of MNPs:    0
+#Number of others:  0
+#Number of sites:   36690
+
+#### parse annotated NARW vcf ###
+bcftools view -e 'ANN~"LOW" || ANN~"MODERATE" || ANN~"HIGH"' annotated.X.NARW.segregating.parsed.vcf.gz -Ov -o intermediate.vcf 
+bcftools view -i 'ANN~"MODIFIER"' -o modifier.vcf -Ov intermediate.vcf
+bcftools plugin counts modifier.vcf >  modifier.counts
+
+## 28046 snps
+
+bcftools view -i 'ANN~"LOW"' -o low.vcf -Ov annotated.X.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts low.vcf > low.counts
+
+## 340 snps
+
+bcftools view -i 'ANN~"MODERATE"' -o moderate.vcf -Ov annotated.X.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts moderate.vcf > moderate.counts
+
+## 388 snps
+
+bcftools view -i 'ANN~"HIGH"' -o high.vcf -Ov annotated.X.NARW.segregating.parsed.vcf.gz
+bcftools plugin counts high.vcf > high.counts
+
+## 12 snps
+
+
+
+
+#############################################
+###      Site Fst per impact category    ####
+#############################################
+
+vcftools --vcf modifier.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/modifier
+vcftools --vcf moderate.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/moderate
+vcftools --vcf high.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/high
+vcftools --vcf low.vcf --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/low.pop --weir-fst-pop /home/rorton/scratch/CSEE/_text_files/high.pop --out differentiation/low
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X/differentiation 
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }' modifier.weir.fst  | sed '0,/Modifier/{s/Modifier/Impact/}'   > X.modifier.fst
+awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }' low.weir.fst            | sed '0,/Low/{s/Low/Impact/}'             > X.low.fst
+awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }' moderate.weir.fst  | sed '0,/Moderate/{s/Moderate/Impact/}'   > X.moderate.fst
+awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }' high.weir.fst          | sed '0,/High/{s/High/Impact/}'           > X.high.fst
+
+
+
+
+
+
+##########################################################################
+###      Site HWE (and allele/genotype counts) per impact category    ####
+##########################################################################
+
+### HIGH fecund ###
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X
+
+vcftools --vcf modifier.vcf --keep /home/rorton/scratch/CSEE/_text_files/high.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/HIGH.modifier
+vcftools --vcf low.vcf --keep /home/rorton/scratch/CSEE/_text_files/high.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/HIGH.low
+vcftools --vcf moderate.vcf --keep /home/rorton/scratch/CSEE/_text_files/high.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/HIGH.moderate
+vcftools --vcf high.vcf --keep /home/rorton/scratch/CSEE/_text_files/high.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/HIGH.high
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X/site_stats
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.modifier.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'      | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_HIGH.modifier.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.low.hwe            | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'           | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Low/{s/Low/Impact/}'                       > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_HIGH.low.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.moderate.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'      | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_HIGH.moderate.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }' HIGH.high.hwe           | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'          | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/High/{s/High/Impact/}'                     > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_HIGH.high.AF
+
+
+
+### LOW fecund ###
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X
+
+vcftools --vcf modifier.vcf --keep /home/rorton/scratch/CSEE/_text_files/low.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/LOW.modifier
+vcftools --vcf low.vcf --keep /home/rorton/scratch/CSEE/_text_files/low.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/LOW.low
+vcftools --vcf moderate.vcf --keep /home/rorton/scratch/CSEE/_text_files/low.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/LOW.moderate
+vcftools --vcf high.vcf --keep /home/rorton/scratch/CSEE/_text_files/low.pop --hardy --out /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/LOW.high
+
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X/site_stats
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.modifier.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'      | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_LOW.modifier.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.low.hwe            | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'           | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Low/{s/Low/Impact/}'                       > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_LOW.low.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.moderate.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'      | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}'             > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_LOW.moderate.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }' LOW.high.hwe           | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'          | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/High/{s/High/Impact/}'                     > /home/rorton/scratch/CSEE/NARW_specific/X/site_stats/X_LOW.high.AF
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X/site_stats
+
+
+cat X_LOW*   | tr / $'\t' > low_fecund.allele_frequencies
+cat X_HIGH*  | tr / $'\t' > high_fecund.allele_frequencies
+
+
+
+
+
+
+
+##########################################################################
+###          Individual genotype and allele frequenceies              ####
+##########################################################################
+
+
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X
+
+
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop modifier.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/LOW.modifier.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop low.vcf       | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/LOW.low.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop moderate.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/LOW.moderate.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/low.pop high.vcf      | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/LOW.high.stats
+
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop modifier.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/HIGH.modifier.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop low.vcf       | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/HIGH.low.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop moderate.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/HIGH.moderate.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/high.pop high.vcf      | grep "PSC" > /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats/HIGH.high.stats
+
+
+cd /home/rorton/scratch/CSEE/NARW_specific/X/individual_stats
+
+sed '1d' LOW.modifier.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'               | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'            | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}' > X.LOW.modifier.indv.AF
+sed '1d' LOW.low.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'                    | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'                | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Low/{s/Low/Impact/}' > X.LOW.low.indv.AF
+sed '1d' LOW.moderate.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'               | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'           | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}' > X.LOW.moderate.indv.AF
+sed '1d' LOW.high.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "LOW", $0 }'                   | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'               | sed '0,/LOW/{s/LOW/Population/}' | sed '0,/High/{s/High/Impact/}' > X.LOW.high.indv.AF
+
+
+sed '1d' HIGH.modifier.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'            | sed '0,/HIGH/{s/HIGH/Population/}'  | sed '0,/Modifier/{s/Modifier/Impact/}' > X.HIGH.modifier.indv.AF
+sed '1d' HIGH.low.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'                  | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'                | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Low/{s/Low/Impact/}' > X.HIGH.low.indv.AF
+sed '1d' HIGH.moderate.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'           | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}' > X.HIGH.moderate.indv.AF
+sed '1d' HIGH.high.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "HIGH", $0 }'                 | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'               | sed '0,/HIGH/{s/HIGH/Population/}' | sed '0,/High/{s/High/Impact/}' > X.HIGH.high.indv.AF
+
+
+cat X.LOW* | sed 's/\#	//g'  | sed 's/ //g' > X_LOW.all.indv.AF
+cat X.HIGH* |sed 's/\#	//g'  | sed 's/ //g' > X_HIGH.all.indv.AF
+
+cat X_LOW.all.indv.AF X_HIGH.all.indv.AF > X_ALL.all.indv.AF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+####################################################################################################################################################################################
+########################## Estimate genetic load as a continuous variable ######################################
+####################################################################################################################################################################################
+
+
+
+#!/bin/bash
+
+#SBATCH --time=72:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load r
+module load bcftools
+
+
+
+
+##################################################################
+###                Genetic load per indvidual                  ###
+##################################################################
+
+
+### use R to estimate load ###
+module load r
+R
+library(dplyr)
+library(reshape2)
+
+
+
+#### X NARW ########
+
+setwd("/home/rorton/scratch/CSEE/NARW_specific/X/individual_stats")
+
+
+ALL_indv.stats <- read.table("X_ALL.all.indv.AF", header = T)
+ALL_indv.stats <- ALL_indv.stats[which(ALL_indv.stats$Impact != "Impact"),]
+ALL_indv.stats <- ALL_indv.stats %>% mutate_at(c('X.4.nRefHom', 'X.5.nNonRefHom', 'X.6.nHets'), as.numeric)
+
+ALL_indv.stats$s <- case_when(
+	ALL_indv.stats$Impact == "Modifier" ~ "0",
+    ALL_indv.stats$Impact == "Low" ~ ".2",
+    ALL_indv.stats$Impact == "Moderate" ~ ".5",
+    ALL_indv.stats$Impact == "High" ~ "1",
+    TRUE ~ "unknown"
+)
+
+
+### get alternate allele frequency ###
+ALL_indv.stats$alternate_allele_frequency <- (  (ALL_indv.stats$X.5.nNonRefHom*2 + ALL_indv.stats$X.6.nHets) /( (ALL_indv.stats$X.4.nRefHom*2) + (ALL_indv.stats$X.5.nNonRefHom*2) + (ALL_indv.stats$X.6.nHets*2)))
+ALL_indv.stats$alternate_genotype_frequency <- (  (ALL_indv.stats$X.5.nNonRefHom) /( (ALL_indv.stats$X.5.nNonRefHom) + (ALL_indv.stats$X.6.nHets) + (ALL_indv.stats$X.4.nRefHom)))
+ALL_indv.stats$heterozygote_frequency <- ALL_indv.stats$X.6.nHets/( (ALL_indv.stats$X.4.nRefHom) + (ALL_indv.stats$X.5.nNonRefHom) + (ALL_indv.stats$X.6.nHets))
+
+ALL_indv.stats <- ALL_indv.stats %>% mutate_at(c('alternate_allele_frequency', 'alternate_genotype_frequency', 'heterozygote_frequency', 's'), as.numeric)
+
+
+
+## genetic load  ##
+ALL_indv.stats$geneticLoad <- (ALL_indv.stats$alternate_genotype_frequency*ALL_indv.stats$s) + .5*ALL_indv.stats$heterozygote_frequency*ALL_indv.stats$s
+
+
+sample <- (ALL_indv.stats$X.3.sample)
+population <- (ALL_indv.stats$Population)
+impact <- (ALL_indv.stats$Impact)
+geneticLoad <- (ALL_indv.stats$geneticLoad)
+alternate_allele_frequency <- (ALL_indv.stats$alternate_allele_frequency)
+alternate_homozygote_frequency <- (ALL_indv.stats$alternate_genotype_frequency) 
+heterozygote_frequency <- (ALL_indv.stats$heterozygote_frequency)
+
+
+
+
+ALL.indv.stats <- data.frame(sample = sample, population = population, impact = impact, 
+					alt_AF = alternate_allele_frequency,
+					alt_hom_F = alternate_homozygote_frequency,
+					het_F = heterozygote_frequency,
+						 GeneticLoad = geneticLoad)
+
+
+
+write.table(ALL.indv.stats, "/home/rorton/scratch/CSEE/NARW_specific/X.indv.NARW.load.stats", ,sep="\t")
+
+
+
+
+
+
+
+#### Autosomes NARW ########
+
+setwd("/home/rorton/scratch/CSEE/NARW_specific/autosomes/individual_stats")
+
+
+ALL_indv.stats <- read.table("autosomes_ALL.all.indv.AF", header = T)
+ALL_indv.stats <- ALL_indv.stats[which(ALL_indv.stats$Impact != "Impact"),]
+ALL_indv.stats <- ALL_indv.stats %>% mutate_at(c('X.4.nRefHom', 'X.5.nNonRefHom', 'X.6.nHets'), as.numeric)
+
+ALL_indv.stats$s <- case_when(
+	ALL_indv.stats$Impact == "Modifier" ~ "0",
+    ALL_indv.stats$Impact == "Low" ~ ".2",
+    ALL_indv.stats$Impact == "Moderate" ~ ".5",
+    ALL_indv.stats$Impact == "High" ~ "1",
+    TRUE ~ "unknown"
+)
+
+
+### get alternate allele frequency ###
+ALL_indv.stats$alternate_allele_frequency <- (  (ALL_indv.stats$X.5.nNonRefHom*2 + ALL_indv.stats$X.6.nHets) /( (ALL_indv.stats$X.4.nRefHom*2) + (ALL_indv.stats$X.5.nNonRefHom*2) + (ALL_indv.stats$X.6.nHets*2)))
+ALL_indv.stats$alternate_genotype_frequency <- (  (ALL_indv.stats$X.5.nNonRefHom) /( (ALL_indv.stats$X.5.nNonRefHom) + (ALL_indv.stats$X.6.nHets) + (ALL_indv.stats$X.4.nRefHom)))
+ALL_indv.stats$heterozygote_frequency <- ALL_indv.stats$X.6.nHets/( (ALL_indv.stats$X.4.nRefHom) + (ALL_indv.stats$X.5.nNonRefHom) + (ALL_indv.stats$X.6.nHets))
+
+ALL_indv.stats <- ALL_indv.stats %>% mutate_at(c('alternate_allele_frequency', 'alternate_genotype_frequency', 'heterozygote_frequency', 's'), as.numeric)
+
+
+
+## genetic load  ##
+ALL_indv.stats$geneticLoad <- (ALL_indv.stats$alternate_genotype_frequency*ALL_indv.stats$s) + .5*ALL_indv.stats$heterozygote_frequency*ALL_indv.stats$s
+
+
+sample <- (ALL_indv.stats$X.3.sample)
+population <- (ALL_indv.stats$Population)
+impact <- (ALL_indv.stats$Impact)
+geneticLoad <- (ALL_indv.stats$geneticLoad)
+alternate_allele_frequency <- (ALL_indv.stats$alternate_allele_frequency)
+alternate_homozygote_frequency <- (ALL_indv.stats$alternate_genotype_frequency) 
+heterozygote_frequency <- (ALL_indv.stats$heterozygote_frequency)
+
+
+
+
+ALL.indv.stats <- data.frame(sample = sample, population = population, impact = impact, 
+					alt_AF = alternate_allele_frequency,
+					alt_hom_F = alternate_homozygote_frequency,
+					het_F = heterozygote_frequency,
+						 GeneticLoad = geneticLoad)
+
+
+
+write.table(ALL.indv.stats, "/home/rorton/scratch/CSEE/NARW_specific/autosomes.indv.NARW.load.stats", ,sep="\t")
+
+
+
+
+
+
+
+##################################################################
+###         Genetic load per site per population               ###
+##################################################################
+
+
+
+############## low fecund ###########################################
+
+setwd("/home/rorton/scratch/CSEE/NARW_specific/X/site_stats")
+
+
+low_data <- read.table("low_fecund.allele_frequencies", header = T)
+low_data <- low_data[which(low_data$Impact != "Impact"),]
+
+low_data$s <- case_when(
+    low_data$Impact == "Modifier" ~ "0",
+    low_data$Impact == "Low" ~ ".1",
+    low_data$Impact == "Moderate" ~ ".3",
+    low_data$Impact == "High" ~ ".6",
+    TRUE ~ "unknown"
+)
+
+
+
+# generate h values from an exponential distribution centered around a mean of 0.2 from Whitlock ...  
+#low_data$h <- by(low_data, seq_len(nrow(low_data)), function(row) rexp(1, 10))
+
+
+
+low_data <- low_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 's'), as.numeric)
+
+### get alternate allele frequency ###
+low_data$alternate_allele_frequency <- (  (low_data$HOM2.*2 + low_data$HET) /( (low_data$OBS.HOM1*2) + (low_data$HET*2) + (low_data$HOM2.*2)))
+low_data$alternate_genotype_frequency <- (  (low_data$HOM2.) /( (low_data$OBS.HOM1) + (low_data$HET) + (low_data$HOM2.)))
+low_data$heterozygote_frequency <- (  (low_data$HET) /( (low_data$OBS.HOM1) + (low_data$HET) + (low_data$HOM2.)))
+
+low_data <- low_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 'alternate_allele_frequency', 'alternate_genotype_frequency', 's'), as.numeric)
+
+
+
+
+### genetic load for each site ###
+
+low_data$geneticLoad <- (low_data$alternate_allele_frequency)*low_data$s
+
+
+### realized load for each site ###
+
+low_data$realizedLoad <- (low_data$alternate_genotype_frequency*low_data$s)
+
+
+
+### masked load for each site ###
+
+
+low_data$maskedLoad <- (low_data$alternate_allele_frequency*low_data$s) - (low_data$alternate_genotype_frequency*low_data$s)
+
+
+
+
+
+
+
+############## high fecund ###########################################
+
+
+setwd("/home/rorton/scratch/CSEE/NARW_specific/X/site_stats")
+
+
+high_data <- read.table("high_fecund.allele_frequencies", header = T)
+high_data <- high_data[which(high_data$Impact != "Impact"),]
+
+high_data$s <- case_when(
+    high_data$Impact == "Modifier" ~ "0",
+    high_data$Impact == "Low" ~ ".1",
+    high_data$Impact == "Moderate" ~ ".3",
+    high_data$Impact == "High" ~ ".6",
+    TRUE ~ "unknown"
+)
+
+
+# generate h values from an exponential distribution centered around a mean of 0.2 from Whitlock ...  
+#high_data$h <- low_data$h
+
+
+
+high_data <- high_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 's'), as.numeric)
+
+### get alternate allele frequency ###
+high_data$alternate_allele_frequency <- (  (high_data$HOM2.*2 + high_data$HET) /( (high_data$OBS.HOM1*2) + (high_data$HET*2) + (high_data$HOM2.*2)))
+high_data$alternate_genotype_frequency <- (  (high_data$HOM2.) /( (high_data$OBS.HOM1) + (high_data$HET) + (high_data$HOM2.)))
+high_data$heterozygote_frequency <- (  (high_data$HET) /( (high_data$OBS.HOM1) + (high_data$HET) + (high_data$HOM2.)))
+
+high_data <- high_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 'alternate_allele_frequency', 'alternate_genotype_frequency', 's'), as.numeric)
+
+
+
+
+### genetic load for each site ###
+
+high_data$geneticLoad <- (high_data$alternate_allele_frequency)*high_data$s
+
+
+### realized load for each site ###
+
+high_data$realizedLoad <- (high_data$alternate_genotype_frequency*high_data$s)
+
+
+
+### masked load for each site ###
+
+
+high_data$maskedLoad <- (high_data$alternate_allele_frequency*high_data$s) - (high_data$alternate_genotype_frequency*high_data$s)
+
+
+
+######## combine datasets ################################################################
+
+chromosome <- (low_data$CHR)
+position <- (low_data$POS)
+impact <- (low_data$Impact)
+low_AF    <- low_data$alternate_allele_frequency
+high_AF   <- high_data$alternate_allele_frequency
+low_GTF   <- low_data$alternate_genotype_frequency
+high_GTF  <- high_data$alternate_genotype_frequency
+low_het   <- low_data$heterozygote_frequency
+high_het  <- high_data$heterozygote_frequency
+deltaGenetic <- (low_data$geneticLoad - high_data$geneticLoad)
+deltaRealized <- (low_data$realizedLoad - high_data$realizedLoad)
+deltaMasked <- (low_data$maskedLoad - high_data$maskedLoad)
+deltaHom <- (low_data$HOM2. - high_data$HOM2.)
+p_HWE_low <- (low_data$P_HWE)
+p_HWE_high <- (high_data$P_HWE)
+
+
+
+
+delta_load <- data.frame(CHR=chromosome, POS=position, Impact=impact, 
+						lowFecund_Alt_AF = low_AF, highFecund_Alt_AF = high_AF,
+						lowFecund_Alt_GF = low_GTF, highFecund_GF = high_GTF,
+						p_HWE_low=p_HWE_low, p_HWE_high=p_HWE_high, 
+						deltaGenetic = deltaGenetic,             
+                    	deltaRealized = deltaRealized,
+                    	deltaMasked = deltaMasked,
+                    	deltaHom = deltaHom)
+
+write.table(delta_load, "/home/rorton/scratch/CSEE/NARW_specific/X.NARW.delta_load_melted", sep="\t")
+
+
+delta_load_b <- melt(delta_load, id.var = c('CHR','POS', 'Impact'), variable.name = 'estimate')
+
+
+write.table(delta_load_b, "/home/rorton/scratch/CSEE/NARW_specific/X.NARW.delta_load", sep="\t")
+
+
+
+
+######################
+#### Autosomes #######
+#########################################################################################################################
+
+
+############## low fecund ###########################################
+
+setwd("/home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats")
+
+
+low_data <- read.table("low_fecund.allele_frequencies", header = T)
+low_data <- low_data[which(low_data$Impact != "Impact"),]
+
+low_data$s <- case_when(
+    low_data$Impact == "Modifier" ~ "0",
+    low_data$Impact == "Low" ~ ".1",
+    low_data$Impact == "Moderate" ~ ".3",
+    low_data$Impact == "High" ~ ".6",
+    TRUE ~ "unknown"
+)
+
+
+# generate h values from an exponential distribution centered around a mean of 0.2 from Whitlock ...  
+#low_data$h <- by(low_data, seq_len(nrow(low_data)), function(row) rexp(1, 10))
+
+
+
+low_data <- low_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 's'), as.numeric)
+
+
+
+### get alternate allele frequency ###
+low_data$alternate_allele_frequency <- (  (low_data$HOM2.*2 + low_data$HET) /( (low_data$OBS.HOM1*2) + (low_data$HET*2) + (low_data$HOM2.*2)))
+low_data$alternate_genotype_frequency <- (  (low_data$HOM2.) /( (low_data$OBS.HOM1) + (low_data$HET) + (low_data$HOM2.)))
+low_data$heterozygote_frequency <- (  (low_data$HET) /( (low_data$OBS.HOM1) + (low_data$HET) + (low_data$HOM2.)))
+
+low_data <- low_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 'alternate_allele_frequency', 'alternate_genotype_frequency', 's'), as.numeric)
+
+
+
+
+### genetic load for each site ###
+
+low_data$geneticLoad <- (low_data$alternate_allele_frequency)*low_data$s
+
+
+### realized load for each site ###
+
+low_data$realizedLoad <- (low_data$alternate_genotype_frequency*low_data$s)
+
+
+
+### masked load for each site ###
+
+
+low_data$maskedLoad <- (low_data$alternate_allele_frequency*low_data$s) - (low_data$alternate_genotype_frequency*low_data$s)
+
+
+
+
+
+
+
+
+############## high fecund ###########################################
+
+
+setwd("/home/rorton/scratch/CSEE/NARW_specific/autosomes/site_stats")
+
+
+high_data <- read.table("high_fecund.allele_frequencies", header = T)
+high_data <- high_data[which(high_data$Impact != "Impact"),]
+
+high_data$s <- case_when(
+    high_data$Impact == "Modifier" ~ "0",
+    high_data$Impact == "Low" ~ ".1",
+    high_data$Impact == "Moderate" ~ ".3",
+    high_data$Impact == "High" ~ ".6",
+    TRUE ~ "unknown"
+)
+
+
+# generate h values from an exponential distribution centered around a mean of 0.2 from Whitlock ...  
+#high_data$h <- low_data$h
+
+
+
+high_data <- high_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 's'), as.numeric)
+
+### get alternate allele frequency ###
+high_data$alternate_allele_frequency <- (  (high_data$HOM2.*2 + high_data$HET) /( (high_data$OBS.HOM1*2) + (high_data$HET*2) + (high_data$HOM2.*2)))
+high_data$alternate_genotype_frequency <- (  (high_data$HOM2.) /( (high_data$OBS.HOM1) + (high_data$HET) + (high_data$HOM2.)))
+high_data$heterozygote_frequency <- (  (high_data$HET) /( (high_data$OBS.HOM1) + (high_data$HET) + (high_data$HOM2.)))
+
+high_data <- high_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 'alternate_allele_frequency', 'alternate_genotype_frequency', 's'), as.numeric)
+
+
+
+
+### genetic load for each site ###
+
+high_data$geneticLoad <- (high_data$alternate_allele_frequency)*high_data$s
+
+
+### realized load for each site ###
+
+high_data$realizedLoad <- (high_data$alternate_genotype_frequency*high_data$s)
+
+
+
+### masked load for each site ###
+
+
+high_data$maskedLoad <- (high_data$alternate_allele_frequency*high_data$s) - (high_data$alternate_genotype_frequency*high_data$s)
+
+
+
+######## combine datasets ################################################################
+
+chromosome <- (low_data$CHR)
+position <- (low_data$POS)
+impact <- (low_data$Impact)
+low_AF    <- low_data$alternate_allele_frequency
+high_AF   <- high_data$alternate_allele_frequency
+low_GTF   <- low_data$alternate_genotype_frequency
+high_GTF  <- high_data$alternate_genotype_frequency
+low_het   <- low_data$heterozygote_frequency
+high_het  <- high_data$heterozygote_frequency
+deltaGenetic <- (low_data$geneticLoad - high_data$geneticLoad)
+deltaRealized <- (low_data$realizedLoad - high_data$realizedLoad)
+deltaMasked <- (low_data$maskedLoad - high_data$maskedLoad)
+deltaHom <- (low_data$HOM2. - high_data$HOM2.)
+p_HWE_low <- (low_data$P_HWE)
+p_HWE_high <- (high_data$P_HWE)
+
+
+
+
+delta_load <- data.frame(CHR=chromosome, POS=position, Impact=impact, 
+						lowFecund_Alt_AF = low_AF, highFecund_Alt_AF = high_AF,
+						lowFecund_Alt_GF = low_GTF, highFecund_GF = high_GTF,
+						p_HWE_low=p_HWE_low, p_HWE_high=p_HWE_high, 
+						deltaGenetic = deltaGenetic,             
+                    	deltaRealized = deltaRealized,
+                    	deltaMasked = deltaMasked,
+                    	deltaHom = deltaHom)
+                    	
+                    	
+write.table(delta_load, "/home/rorton/scratch/CSEE/NARW_specific/autosomes.NARW.delta_load_unmelted", sep="\t")
+                    	
+
+delta_load_c <- melt(delta_load, id.var = c('CHR','POS', 'Impact'), variable.name = 'estimate')
+
+write.table(delta_load_c, "/home/rorton/scratch/CSEE/NARW_specific/autosomes.NARW.delta_load", sep="\t")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#########################################################################################################################
+#########################################################################################################################
+#########################################################################################################################
+#########################################################################################################################
+#########################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##################################
+###    Windowed pi and dxy    ####
+##################################
+
+###### run windowed Pi on laptop using Pixy ######
+
+
+########## nucleotide diversity with pixy (autosomes) ############
+
+
+pixy --stats pi fst dxy \
+--vcf /Volumes/cetacea/Genetic_load/NARW_females/GVCFs/autosomes.all_sites.RM.snps.MQ30.DP1400.dp11.gq25.g.NARW.0missing.recode.vcf.gz \
+--populations /Volumes/cetacea/Genetic_load/_text_files/NARW_PopMap.txt \
+--window_size 100000
+
+
+
+
+########## nucleotide diversity with pixy (X) ############
+
+
+pixy --stats pi fst dxy \
+--vcf /Volumes/cetacea/Genetic_load/NARW_females/GVCFs/X.all_sites.RM.MQ30.DP1400.gq25.dp5.snps.FEM.g.NARW.0missing.recode.vcf.gz \
+--populations /Volumes/cetacea/Genetic_load/_text_files/NARW_PopMap.txt \
+--window_size 100000
+
+##### combine output files for plotting ####
+
+#########################
+###  Mutation load    ####
+#########################
+
+### in R, cut the NARW samples .... ####
+
+
+
+
+
+
+
+
+

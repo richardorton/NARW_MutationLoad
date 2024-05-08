@@ -1,0 +1,560 @@
+#######################
+### Richard W. Orton
+### May 7th, 2023
+########################
+## this is the readme and code for analyzing allele frequencies, diversity, and load for the autosomes
+## the processing of data is a different readme 
+
+
+
+
+
+
+###################################
+##               X               ##
+###################################
+
+
+#########################################################################################
+############## Filter out poor samples and any sites with missing data ##################
+#########################################################################################
+
+
+#!/bin/bash
+
+#SBATCH --time=6:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load vcftools
+module load bcftools
+
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/X.all_sites.RM.MQ30.DP1400.gq25.dp5.snps.FEM.75missing.g.recode.vcf.gz --remove-indv SRR15669486 --recode --recode-INFO-all --out /home/rorton/scratch/CSEE/gVCF/X.all_sites.RM.MQ30.DP1400.gq25.dp5.snps.FEM.75missing.g.18
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/X.all_sites.RM.MQ30.DP1400.gq25.dp5.snps.FEM.75missing.g.18.recode.vcf --max-missing 1 --recode --recode-INFO-all --out /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific
+bcftools plugin counts /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf > /home/rorton/scratch/CSEE/gVCF/X_stats/all_counts
+bgzip /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf
+tabix /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz
+
+
+
+
+
+######################################################################
+### WORKING VCF statistics for CSEE.X.interspecific.recode.vcf.gz ####
+######################################################################
+
+###############################
+#Number of samples: 18        #
+#Number of SNPs:    367289    #
+#Number of INDELs:  0         #
+#Number of MNPs:    0         #
+#Number of others:  0	      #
+#Number of sites:   33031830  #
+###############################
+
+
+
+
+##########################################################################################
+                            ################################
+                            ##          snpEff            ##
+                            ################################
+##########################################################################################
+
+
+
+
+#########################################################################################
+############### Build the snpEff data base used to annotate the genome ##################
+#########################################################################################
+
+
+How to building an NCBI genome (GenBank file)
+When building a database with SnpEff if your genomic reference is in NCBI, there is a script that might help you build the database.
+
+The script is buildDbNcbi.sh and is located in snpEff's scripts directory. It takes only one argument, which is the NCBI's ID.
+
+
+buildDbNcbi.sh VNFC03000000
+
+
+### build database with snpEff ####
+
+
+## first add genome to the configuration file
+
+# Blue whale genome
+blue_whale.genome : Blue whale
+
+
+	blue_whale.NC_001601.1.codonTable : Vertebrate_Mitochondrial
+
+
+## then build database using gtf file
+## need to copy over fasta, cds, protein, and gtf files into blue_whale database directory in snpEff data. rename sequences.fa, cds.fa, protein.fa, and genes.gtf respectively
+## then bgzip each file
+# load newest version of java: java/17.0.2
+
+module load java/17.0.2
+java -jar snpEff.jar build -gtf22 -v -noCheckCds -noCheckProtein blue_whale
+
+
+
+
+
+
+#########################################################################################
+###############           Annotate vcf file with snpEff                ##################
+#########################################################################################
+
+#!/bin/bash
+
+#SBATCH --time=4:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load java/17.0.2
+module load tabix
+module load vcftools
+module load bcftools
+
+cd /home/rorton/scratch/CSEE/interspecific/X/
+
+/home/rorton/snpEff/scripts/snpEff blue_whale /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz > /home/rorton/scratch/CSEE/interspecific/X/X_annotation.vcf
+############################################################################################
+
+
+#######################################################################################################
+############### Filter annotated vcf on derived sites and parse multi-alleleic sites ##################
+#######################################################################################################
+
+
+### filter out fixed sites ###
+vcftools --vcf X_annotation.vcf --maf .01 --recode --recode-INFO-all --out annotated.X.segregating
+bcftools plugin counts annotated.X.segregating.recode.vcf > annotated.X.segregating.counts
+
+#############################
+#Number of samples: 18
+#Number of SNPs:    137297
+#Number of INDELs:  0
+#Number of MNPs:    0
+#Number of others:  0
+#Number of sites:   166380
+#############################
+
+
+### keep multi allelic sites to be analyzed ###
+bcftools norm -m - annotated.X.segregating.recode.vcf Oz -o X_annotation.derived.parsed.vcf.gz
+bcftools plugin counts X_annotation.derived.parsed.vcf.gz > countsAnnotated.derived.parsed
+
+
+
+
+######################################################################
+### WORKING VCF statistics for X_annotation.derived.parsed.vcf.gz ####
+######################################################################
+
+###############################
+#Number of samples: 18		  #
+#Number of SNPs:    137961    #
+#Number of INDELs:  0         #
+#Number of MNPs:    0         #
+#Number of others:  0         #
+#Number of sites:   167666    #
+###############################
+
+
+
+#########################################################################################
+############### Split annotations into 4 vcf files per putative impact ##################
+#########################################################################################
+
+
+
+############################## Modifier ##############################################
+bcftools view -e 'ANN~"LOW" || ANN~"MODERATE" || ANN~"HIGH"' -o X_intermediate.modifier.vcf -Ov X_annotation.derived.parsed.vcf.gz
+bcftools view -i 'ANN~"MODIFIER"' -o modifier.vcf -Ov X_intermediate.modifier.vcf
+bcftools plugin counts modifier.vcf > modifier.summary.counts
+
+
+# 136214 snps
+
+
+############################## low impact ##############################################
+bcftools view -i 'ANN~"LOW"' -o low.vcf -Ov X_annotation.derived.parsed.vcf.gz
+bcftools plugin counts low.vcf > low.summary.counts
+
+# 954 snps
+
+############################## moderate impact ##########################################
+bcftools view -i 'ANN~"MODERATE"' -o moderate.vcf -Ov X_annotation.derived.parsed.vcf.gz
+bcftools plugin counts moderate.vcf > moderate.summary.counts
+
+# 772 snps
+
+############################## high impact ##############################################
+bcftools view -i 'ANN~"HIGH"' -o high.vcf -Ov X_annotation.derived.parsed.vcf.gz
+bcftools plugin counts high.vcf > high.summary.counts
+
+# 34 snps
+
+#########################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+##########################################################################################
+                    ######################################################
+                    ##            Diversity and summary stats           ##
+                    ######################################################
+##########################################################################################
+
+
+
+
+########## (X) ############
+pixy --stats pi fst dxy \
+--vcf /Volumes/cetacea/Genetic_load/X_GVCF/CSEE.X.interspecific.recode.vcf.gz  \
+--populations /Volumes/cetacea/Genetic_load/_text_files/females_pop_map_A \
+--window_size 100000
+################################################################################################################################
+
+
+
+
+
+
+
+#!/bin/bash
+
+#SBATCH --time=4:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load java/17.0.2
+module load tabix
+module load vcftools
+module load bcftools
+
+
+
+
+cd /home/rorton/scratch/CSEE/interspecific/X
+
+
+
+
+#####################################################################################
+###   Individual F AND allele/genotype counts per INDIVIDUAL per impact category  ###
+#####################################################################################
+
+
+### get inbreeding coefficient for each individual ###
+
+
+cd /home/rorton/scratch/CSEE/interspecific/X
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --het --out /home/rorton/scratch/CSEE/interspecific/X/individual_stats/ALL
+
+
+#####################################################################################################
+###      Site HWE AND allele/genotype counts per SITE per impact category for each population    ####
+#####################################################################################################
+
+
+## split into three population VCF files and run for each impact ###
+
+
+### NARW ###
+
+cd /home/rorton/scratch/CSEE/interspecific/X
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt > vcftools --vcf modifier.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/NARW.modifier
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt > vcftools --vcf low.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/NARW.low
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt > vcftools --vcf moderate.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/NARW.moderate
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt > vcftools --vcf high.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/NARW.high
+
+cd /home/rorton/scratch/CSEE/interspecific/X/site_stats
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }' NARW.modifier.hwe | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }' | sed '0,/NARW/{s/NARW/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}'   > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_NARW.modifier.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }' NARW.low.hwe      | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'      | sed '0,/NARW/{s/NARW/Population/}' | sed '0,/Low/{s/Low/Impact/}'             > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_NARW.low.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }' NARW.moderate.hwe | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }' | sed '0,/NARW/{s/NARW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}'   > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_NARW.moderate.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }' NARW.high.hwe     | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'     | sed '0,/NARW/{s/NARW/Population/}' | sed '0,/High/{s/High/Impact/}'           > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_NARW.high.AF
+
+
+
+### SRW ###
+
+cd /home/rorton/scratch/CSEE/interspecific/X
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt > vcftools --vcf modifier.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/SRW.modifier
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt > vcftools --vcf low.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/SRW.low
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt > vcftools --vcf moderate.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/SRW.moderate
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt > vcftools --vcf high.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/SRW.high
+
+cd /home/rorton/scratch/CSEE/interspecific/X/site_stats
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }' SRW.modifier.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'      | sed '0,/SRW/{s/SRW/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}'             > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_SRW.modifier.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }' SRW.low.hwe            | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'           | sed '0,/SRW/{s/SRW/Population/}' | sed '0,/Low/{s/Low/Impact/}'                       > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_SRW.low.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }' SRW.moderate.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'      | sed '0,/SRW/{s/SRW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}'             > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_SRW.moderate.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }' SRW.high.hwe           | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'          | sed '0,/SRW/{s/SRW/Population/}' | sed '0,/High/{s/High/Impact/}'                     > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_SRW.high.AF
+
+
+
+### BH ###
+
+cd /home/rorton/scratch/CSEE/interspecific/X
+
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt > vcftools --vcf modifier.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/BH.modifier
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt > vcftools --vcf low.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/BH.low
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt > vcftools --vcf moderate.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/BH.moderate
+vcftools --gzvcf /home/rorton/scratch/CSEE/gVCF/CSEE.X.interspecific.recode.vcf.gz --keep /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt > vcftools --vcf high.vcf --hardy --out /home/rorton/scratch/CSEE/interspecific/X/site_stats/BH.high
+
+cd /home/rorton/scratch/CSEE/interspecific/X/site_stats
+
+awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }' BH.modifier.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'      | sed '0,/BH/{s/BH/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}'             > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_BH.modifier.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }' BH.low.hwe            | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'           | sed '0,/BH/{s/BH/Population/}' | sed '0,/Low/{s/Low/Impact/}'                       > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_BH.low.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }' BH.moderate.hwe       | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'      | sed '0,/BH/{s/BH/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}'             > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_BH.moderate.AF
+awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }' BH.high.hwe           | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'          | sed '0,/BH/{s/BH/Population/}' | sed '0,/High/{s/High/Impact/}'                     > /home/rorton/scratch/CSEE/interspecific/X/site_stats/X_BH.high.AF
+
+
+
+cat X_BH*   | tr / $'\t' > BH.allele_frequencies
+cat X_SRW*  | tr / $'\t' > SRW.allele_frequencies
+cat X_NARW*  | tr / $'\t' > NARW.allele_frequencies
+
+cat *.allele_frequencies  | tr / $'\t' > ALL.allele_frequencies
+
+
+
+
+
+
+
+
+##########################################################################
+###          Individual genotype and allele frequenceies              ####
+##########################################################################
+
+
+
+
+cd /home/rorton/scratch/CSEE/interspecific/X
+
+
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt modifier.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/BH.modifier.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt low.vcf       | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/BH.low.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt moderate.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/BH.moderate.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_BH_list.txt high.vcf      | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/BH.high.stats
+
+
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt modifier.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/SRW.modifier.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt low.vcf       | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/SRW.low.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt moderate.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/SRW.moderate.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_SRW_list.txt high.vcf      | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/SRW.high.stats
+
+
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt modifier.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/NARW.modifier.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt low.vcf       | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/NARW.low.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt moderate.vcf  | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/NARW.moderate.stats
+bcftools stats -S /home/rorton/scratch/CSEE/_text_files/X_NARW_list.txt high.vcf      | grep "PSC" > /home/rorton/scratch/CSEE/interspecific/X/individual_stats/NARW.high.stats
+
+
+cd /home/rorton/scratch/CSEE/interspecific/X/individual_stats
+
+sed '1d' BH.modifier.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }'               | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'           | sed '0,/BH/{s/BH/Population/}' | sed '0,/Modifier/{s/Modifier/Impact/}' > X.BH.modifier.indv.AF
+sed '1d' BH.low.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }'                    | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'                | sed '0,/BH/{s/BH/Population/}' | sed '0,/Low/{s/Low/Impact/}' > X.BH.low.indv.AF
+sed '1d' BH.moderate.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }'               | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'           | sed '0,/BH/{s/BH/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}' > X.BH.moderate.indv.AF
+sed '1d' BH.high.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "BH", $0 }'                   | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'               | sed '0,/BH/{s/BH/Population/}' | sed '0,/High/{s/High/Impact/}' > X.BH.high.indv.AF
+
+
+sed '1d' SRW.modifier.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'           | sed '0,/SRW/{s/SRW/Population/}'  | sed '0,/Modifier/{s/Modifier/Impact/}' > X.SRW.modifier.indv.AF
+sed '1d' SRW.low.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }'                  | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'                | sed '0,/SRW/{s/SRW/Population/}' | sed '0,/Low/{s/Low/Impact/}' > X.SRW.low.indv.AF
+sed '1d' SRW.moderate.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'           | sed '0,/SRW/{s/SRW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}' > X.SRW.moderate.indv.AF
+sed '1d' SRW.high.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "SRW", $0 }'                 | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'               | sed '0,/SRW/{s/SRW/Population/}' | sed '0,/High/{s/High/Impact/}' > X.SRW.high.indv.AF
+
+
+sed '1d' NARW.modifier.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Modifier", $0 }'           | sed '0,/NARW/{s/NARW/Population/}'  | sed '0,/Modifier/{s/Modifier/Impact/}' > X.NARW.modifier.indv.AF
+sed '1d' NARW.low.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }'                  | awk 'BEGIN{ FS = OFS = "\t" } { print "Low", $0 }'                | sed '0,/NARW/{s/NARW/Population/}' | sed '0,/Low/{s/Low/Impact/}' > X.NARW.low.indv.AF
+sed '1d' NARW.moderate.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }'             | awk 'BEGIN{ FS = OFS = "\t" } { print "Moderate", $0 }'           | sed '0,/NARW/{s/NARW/Population/}' | sed '0,/Moderate/{s/Moderate/Impact/}' > X.NARW.moderate.indv.AF
+sed '1d' NARW.high.stats | awk 'BEGIN{ FS = OFS = "\t" } { print "NARW", $0 }'                 | awk 'BEGIN{ FS = OFS = "\t" } { print "High", $0 }'               | sed '0,/NARW/{s/NARW/Population/}' | sed '0,/High/{s/High/Impact/}' > X.NARW.high.indv.AF
+
+
+
+
+cat X.BH* | sed 's/\#	//g'  | sed 's/ //g' > X_BH.all.indv.AF
+cat X.SRW* |sed 's/\#	//g'  | sed 's/ //g' > X_SRW.all.indv.AF
+cat X.NARW* |sed 's/\#	//g'  | sed 's/ //g' > X_NARW.all.indv.AF
+
+
+cat X_BH.all.indv.AF X_SRW.all.indv.AF X_NARW.all.indv.AF > X_ALL.all.indv.AF
+
+
+
+
+
+
+####################################################################################################################################################################################
+########################## Estimate genetic load as a continuous variable ######################################
+####################################################################################################################################################################################
+
+
+
+#!/bin/bash
+
+#SBATCH --time=72:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load r
+module load bcftools
+
+
+
+
+##################################################################
+###                Genetic load per indvidual                  ###
+##################################################################
+
+
+### use R to estimate load ###
+module load r
+R
+library(dplyr)
+library(reshape2)
+
+setwd("/home/rorton/scratch/CSEE/interspecific/X/individual_stats")
+
+
+ALL_indv.stats <- read.table("X_ALL.all.indv.AF", header = T)
+ALL_indv.stats <- ALL_indv.stats[which(ALL_indv.stats$Impact != "Impact"),]
+ALL_indv.stats <- ALL_indv.stats %>% mutate_at(c('X.4.nRefHom', 'X.5.nNonRefHom', 'X.6.nHets'), as.numeric)
+
+ALL_indv.stats$s <- case_when(
+	ALL_indv.stats$Impact == "Modifier" ~ "0",
+    ALL_indv.stats$Impact == "Low" ~ ".1",
+    ALL_indv.stats$Impact == "Moderate" ~ ".3",
+    ALL_indv.stats$Impact == "High" ~ ".6",
+    TRUE ~ "unknown"
+)
+
+
+### get alternate allele frequency ###
+ALL_indv.stats$alternate_allele_frequency <- (  (ALL_indv.stats$X.5.nNonRefHom*2 + ALL_indv.stats$X.6.nHets) /( (ALL_indv.stats$X.4.nRefHom*2) + (ALL_indv.stats$X.5.nNonRefHom*2) + (ALL_indv.stats$X.6.nHets*2)))
+ALL_indv.stats$alternate_genotype_frequency <- (  (ALL_indv.stats$X.5.nNonRefHom) /( (ALL_indv.stats$X.5.nNonRefHom) + (ALL_indv.stats$X.6.nHets) + (ALL_indv.stats$X.4.nRefHom)))
+ALL_indv.stats$heterozygote_frequency <- ALL_indv.stats$X.6.nHets/( (ALL_indv.stats$X.4.nRefHom) + (ALL_indv.stats$X.5.nNonRefHom) + (ALL_indv.stats$X.6.nHets))
+
+ALL_indv.stats <- ALL_indv.stats %>% mutate_at(c('alternate_allele_frequency', 'alternate_genotype_frequency', 'heterozygote_frequency', 's'), as.numeric)
+
+
+
+## genetic load  ##
+ALL_indv.stats$geneticLoad <- (ALL_indv.stats$alternate_genotype_frequency*ALL_indv.stats$s) + .5*ALL_indv.stats$heterozygote_frequency*ALL_indv.stats$s
+
+
+sample <- (ALL_indv.stats$X.3.sample)
+population <- (ALL_indv.stats$Population)
+impact <- (ALL_indv.stats$Impact)
+geneticLoad <- (ALL_indv.stats$geneticLoad)
+alternate_allele_frequency <- (ALL_indv.stats$alternate_allele_frequency)
+alternate_homozygote_frequency <- (ALL_indv.stats$alternate_genotype_frequency) 
+heterozygote_frequency <- (ALL_indv.stats$heterozygote_frequency)
+
+
+
+
+ALL.indv.stats <- data.frame(sample = sample, population = population, impact = impact, 
+					alt_AF = alternate_allele_frequency,
+					alt_hom_F = alternate_homozygote_frequency,
+					het_F = heterozygote_frequency,
+						 GeneticLoad = geneticLoad)
+
+
+
+write.table(ALL.indv.stats, "/home/rorton/scratch/CSEE/interspecific/X.indv.inter.load.stats", ,sep="\t")
+
+
+
+
+
+
+
+##################################################################
+###         Genetic load per site per population               ###
+##################################################################
+
+
+
+setwd("/home/rorton/scratch/CSEE/interspecific/X/site_stats")
+
+
+low_data <- read.table("ALL.allele_frequencies", header = T)
+low_data <- low_data[which(low_data$Impact != "Impact"),]
+
+low_data$s <- case_when(
+    low_data$Impact == "Modifier" ~ "0",
+    low_data$Impact == "Low" ~ ".2",
+    low_data$Impact == "Moderate" ~ ".5",
+    low_data$Impact == "High" ~ "1",
+    TRUE ~ "unknown"
+)
+
+
+# generate h values from an exponential distribution centered around a mean of 0.2 from Whitlock ...  
+low_data$h <- by(low_data, seq_len(nrow(low_data)), function(row) rexp(1, 10))
+
+
+
+low_data <- low_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 's', 'h'), as.numeric)
+
+### get alternate allele frequency ###
+low_data$alternate_allele_frequency <- (  (low_data$HOM2.*2 + low_data$HET) /( (low_data$OBS.HOM1*2) + (low_data$HET*2) + (low_data$HOM2.*2)))
+low_data$alternate_genotype_frequency <- (  (low_data$HOM2.) /( (low_data$OBS.HOM1) + (low_data$HET) + (low_data$HOM2.)))
+low_data$heterozygote_frequency <- (  (low_data$HET) /( (low_data$OBS.HOM1) + (low_data$HET) + (low_data$HOM2.)))
+
+low_data <- low_data %>% mutate_at(c('OBS.HOM1', 'HET', 'HOM2.', 'alternate_allele_frequency', 'alternate_genotype_frequency', 's'), as.numeric)
+
+
+
+
+### genetic load for each site ###
+
+low_data$geneticLoad <- (low_data$alternate_allele_frequency)*low_data$s
+
+
+### realized load for each site ###
+
+low_data$realizedLoad <- (low_data$alternate_genotype_frequency*low_data$s) + (low_data$heterozygote_frequency*low_data$s*low_data$h)
+
+
+
+### masked load for each site ###
+
+
+low_data$maskedLoad <- (low_data$alternate_allele_frequency*low_data$s) - (low_data$alternate_genotype_frequency*low_data$s) - (low_data$heterozygote_frequency*low_data$s*low_data$h)
+
+
+
+
+write.table(low_data, "/home/rorton/scratch/CSEE/interspecific/X.inter.site.load", sep="\t")
+
+
+
+
+
+
+
+
+

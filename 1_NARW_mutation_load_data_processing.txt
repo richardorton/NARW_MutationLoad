@@ -1,0 +1,973 @@
+
+#############################################################################
+#																			#
+#    Right whale WGS - genetic load - RWO thesis - started June, 14 2022    #
+#																			#
+#############################################################################
+
+
+
+
+
+#################################################################
+##  southern (top) and north atlantic RW (bottom) sample list  ##
+#################################################################
+Eau017
+Eau018
+Eau019
+Eau023
+Eau029
+Eau034A
+Eau10b
+Eau283
+Eau7
+Eau9c
+
+EGL00252
+EGL013
+EGL140
+EGL183
+EGL254
+EGL272
+EGL276
+EGL308
+EGL312
+EGL336
+SID179132
+SID181803
+
+
+
+#########################
+## bowhead sample list ##
+#########################
+
+# accession numbers for NCBI #
+################################
+SRR15669491
+SRR15669493
+SRR15669485
+SRR15669486
+SRR15669490
+SRR15669489
+SRR15669488
+SRR15669487
+SRR15669495
+SRR15669496
+SRR15669494
+SRR15669492
+################################
+
+#######################################
+## Step 0a. download bowhead genomes ##
+#######################################
+
+Data are available as electronic supplementary material. Te raw 150 bp paired-end Illumina NextSeq 500 reads
+are deposited in NCBI’s Sequence Read Archives (Bioproject: PRJNA643010 and Bioproject: PRJNA798027).
+
+Cerca, J., Westbury, M.V., Heide-Jørgensen, M.P. et al. High genomic diversity in the endangered East Greenland Svalbard Barents Sea stock of bowhead whales (Balaena mysticetus). Sci Rep 12, 6118 (2022). https://doi.org/10.1038/s41598-022-09868-5
+### use sra toolkit to download bowhead whale genomes from NCBI ##
+
+
+
+#!/bin/bash
+
+#SBATCH --time=24:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=60G
+#SBATCH --array=1-12
+
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/projects/def-frasiert/rorton/_text_files/BH_sample_list)
+
+module load gcc/9.3.0 
+module load sra-toolkit/3.0.0
+
+fastq-dump --split-3 SRR15669492
+
+
+
+samples=`cat /Volumes/cetacea/Genetic_load/_text_files/BH_sample.list`
+for i in $samples
+do
+fastq-dump --split-3 ${i} 
+done
+
+##########################################
+
+
+
+
+
+
+##########################################
+### step 0b. get read counts of raw fq ###
+##########################################
+
+#!/bin/bash
+
+#SBATCH --time=18:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=12G
+
+moduleload bioawk
+
+for file in *.fastq.gz;
+do
+bioawk -c fastx 'END{print NR}' $file;
+done
+
+
+#####################################
+### step 1. Trim and filter reads ###
+#####################################
+
+### rightwhales ###
+###################
+
+#SBATCH --time=12:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=125G
+#SBATCH --array=1-69%20
+
+module load StdEnv/2020 
+module load trimmomatic/0.39
+
+
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/RW_multilane_sample_ID.txt)
+
+java -jar $EBROOTTRIMMOMATIC/trimmomatic-0.39.jar PE -phred33 -threads 64 /home/rorton/scratch/RW_raw_fastq/${SAMPLE}_R1_001.fastq.gz /home/rorton/scratch/RW_raw_fastq/${SAMPLE}_R2_001.fastq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R1.P.fq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R1.U.fq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R2.P.fq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R2.U.fastq.gz LEADING:20 TRAILING:20 MINLEN:32 AVGQUAL:30
+
+
+
+### bowhead ###
+###############
+#!/bin/bash
+
+#SBATCH --time=12:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+#SBATCH --array=1-12
+
+module load StdEnv/2020 
+module load trimmomatic/0.39
+
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/BH_sample.list)
+
+java -jar $EBROOTTRIMMOMATIC/trimmomatic-0.39.jar PE -phred33 -threads 64 /home/rorton/scratch/BH_raw_fastq/${SAMPLE}_1.fastq.gz /home/rorton/scratch/BH_raw_fastq/${SAMPLE}_2.fastq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R1.P.fq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R1.U.fq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R2.P.fq.gz /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLE}_R2.U.fastq.gz LEADING:20 TRAILING:20 MINLEN:32 AVGQUAL:30
+
+##########################################################################################
+
+### settings ###
+PE           - paired end reads
+phred33      - only keep bases with a phredscore of 33 ....
+LEADING:20   - the leading bases must have a score of at least 20 
+TRAILING:20  - the trailing bases must have a score of at least 20
+MINLEN:32    - only keep sequences with a length of 32 or higher after filtering low quality base reads
+AVGQUAL:30   - only keep sequences with an average quality score of 30 or higher
+
+
+
+#######################################################################################
+### step 2. Run fastqc on all raw (concatenated) and trimmed samples for comparison ###
+#######################################################################################
+
+#!/bin/bash
+
+#SBATCH --time=18:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=12G
+
+module load fastqc
+
+## run fastqc
+for file in /home/rorton/projects/def-frasiert/rorton/1_concatenated_fastq/*.gz
+do
+fastqc $file
+done
+
+## move html files
+for file in /home/rorton/projects/def-frasiert/rorton/1_concatenated_fastq/*.html
+do
+mv $file /home/rorton/projects/def-frasiert/rorton/1b_fastqc_concatenated_output 
+done
+
+## remove .zip files
+for file in /home/rorton/projects/def-frasiert/rorton/1_concatenated_fastq/* _fastqc.zip
+do
+rm $file
+done
+########
+##########################################################################################
+
+
+
+## for trimmed/filtered reads; then move output to fastqc directory
+##########################################################################################
+#!/bin/bash
+
+#SBATCH --time=18:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=12G
+
+module load fastqc
+
+## run fastqc
+for file in /home/rorton/projects/def-frasiert/rorton/2_filtered_fastq/*.gz
+do
+fastqc $file
+done
+
+## move html files
+for file in /home/rorton/projects/def-frasiert/rorton/2_filtered_fastq/*.html
+do
+mv $file /home/rorton/projects/def-frasiert/rorton/2b_fastqc_filtered_output
+done
+
+## remove .zip files
+for file in /home/rorton/projects/def-frasiert/rorton/2_filtered_fastq/* _fastqc.zip
+do
+rm $file
+done
+##########################################################################################
+
+## get read counts to make sure an alarming amount of reads were not lost
+## some will be lost due to low quality or technical reads (e.g. adapters)
+
+for file in *.P.fq.gz;
+do
+bioawk -c fastx 'END{print NR}' $file;
+done
+
+
+## in general, we lost about 10% of reads during this step. this seems to be typical
+
+
+
+
+
+
+
+###################################################
+### step 1b. prepare and index reference genomes ###
+###################################################
+
+## map reads to blue whale (2022) reference
+
+
+(3a)
+### get scaffold sizes from reference 
+samtools faidx GCF_009873245.2_mBalMus1.pri.v3_genomic.fna
+cut -f1,2 GCF_009873245.2_mBalMus1.pri.v3_genomic.fna.fai > /home/rorton/scratch/genetic_load/_text_files/chromsizes.txt
+
+## grab the karyotype from this list, then save only the chromosome names to "karyotype.txt" file
+
+(3b)
+### only keep karyotype
+seqtk subseq GCF_009873245.2_mBalMus1.pri.v3_genomic.fna /home/rorton/scratch/genetic_load/_text_files/karyotype.txt > BW_karyotyoe_reference.fasta
+
+(3c)
+##### index genome #########
+samtools faidx BW_karyotyoe_reference.fasta
+bwa index BW_karyotyoe_reference.fasta
+gatk CreateSequenceDictionary -R BW_karyotyoe_reference.fasta 
+
+
+(3d)
+### double check length of scaffolds 
+cut -f1,2 BW_karyotyoe_reference.fasta.fai 
+
+
+###########################
+NC_045785.1	184938300
+NC_045786.1	175897734
+NC_045787.1	171266408
+NC_045788.1	144968589
+NC_045789.1	140689829
+NC_045790.1	116510015
+NC_045791.1	113414938
+NC_045792.1	110314666
+NC_045793.1	107421550
+NC_045794.1	104744437
+NC_045795.1	104068540
+NC_045796.1	91445419
+NC_045797.1	90635089
+NC_045798.1	90457838
+NC_045799.1	88470553
+NC_045800.1	86152963
+NC_045801.1	81207215
+NC_045802.1	79663398
+NC_045803.1	60735208
+NC_045804.1	60304989
+NC_045805.1	36241783
+NC_045806.1	128877148 ### X
+NC_045807.1	  2349494 ### Y
+NC_001601.1 16402 ### mito genome
+###########################
+
+
+
+
+#######################################
+### step 2. map reads to reference  ###
+#######################################
+
+
+############ for right whales #################
+#!/bin/bash
+
+#SBATCH --time=12:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --array=1-66%20 ## note, dropped the one BH here
+
+module load bwa
+module load samtools
+
+SAMPLELANE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/RW_multilane_sample_ID.txt)
+SAMPLE=$(grep -oP '(?<=\b).*?(?=_2)' <<< "$SAMPLELANE")
+LANE=${SAMPLELANE: -4}
+READGROUP="@RG\tID:${LANE}\tSM:${SAMPLE}\tLB:RW\tCN:MCGILL\tPL:ILLUMINA"
+
+
+bwa mem -M -t 32 \
+  -R $READGROUP \
+  /home/rorton/scratch/blue_whale_reference/genome/BW_karyotyoe_reference.fasta \
+  /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLELANE}_R1.P.fq.gz \
+  /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLELANE}_R2.P.fq.gz > \
+  /home/rorton/scratch/genetic_load/2_mapped_raw_fasta/${SAMPLELANE}.mapped.bam \
+  2> /home/rorton/scratch/genetic_load/2b_mapped_QC/${SAMPLELANE}_bwa.err
+
+
+
+############ for bowhead whales #################
+#!/bin/bash
+
+#SBATCH --time=12:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --array=1-12
+
+module load bwa
+module load samtools
+
+SAMPLELANE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/bowhead_sample_ID.txt)
+SAMPLE=${SAMPLELANE}
+LANE=001
+READGROUP="@RG\tID:${LANE}\tSM:${SAMPLE}\tLB:RW\tCN:MCGILL\tPL:ILLUMINA"
+
+
+bwa mem -M -t 32 \
+  -R $READGROUP \
+  /home/rorton/scratch/blue_whale_reference/genome/BW_karyotyoe_reference.fasta \
+  /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLELANE}_R1.P.fq.gz \
+  /home/rorton/scratch/genetic_load/1_trimmed.fastq/${SAMPLELANE}_R2.P.fq.gz > \
+  /home/rorton/scratch/genetic_load/2_mapped_raw_fasta/${SAMPLELANE}.mapped.bam \
+  2> /home/rorton/scratch/genetic_load/2b_mapped_QC/${SAMPLELANE}_bwa.err
+
+
+
+
+
+###########################################
+###     step 3. sort mapped reads      ###
+###########################################
+
+
+### for bowhead ###
+
+#!/bin/bash
+
+#SBATCH --time=12:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --array=1-12
+
+module load samtools
+
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/bowhead_sample_ID.txt)
+
+samtools sort /home/rorton/scratch/genetic_load/2_mapped_raw_fasta/${SAMPLE}.mapped.bam -@ 32 -O bam -T /home/rorton/scratch/_temp/${SAMPLE}_temp -o /home/rorton/scratch/genetic_load/3_sorted_bam/${SAMPLE}.sorted.bam
+
+
+
+### for rightwhale ###
+
+#!/bin/bash
+
+#SBATCH --time=12:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --array=1-66%22
+
+module load samtools
+
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/RW_multilane_sample_ID.txt)
+
+samtools sort /home/rorton/scratch/genetic_load/2_mapped_raw_fasta/${SAMPLE}.mapped.bam -@ 32 -O bam -T /home/rorton/scratch/_temp/${SAMPLE}_temp -o /home/rorton/scratch/genetic_load/3_sorted_bam/${SAMPLE}.sorted.bam
+
+
+
+
+
+###########################################
+###  step 4. merge sorted bam files     ###
+###########################################
+
+
+### RW ###
+
+#!/bin/bash
+
+#SBATCH --time=8:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=125G
+#SBATCH --array=1-22
+
+module load picard
+
+SAMPLELANE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/RW_with_lane_info.txt)
+SAMPLE=$(grep -oP '(?<=\b).*?(?=_2)' <<< "$SAMPLE_LANE")
+
+java -jar $EBROOTPICARD/picard.jar MergeSamFiles \
+      I=/home/rorton/scratch/genetic_load/3_sorted_bam/${SAMPLELANE}_L002.sorted.bam \
+      I=/home/rorton/scratch/genetic_load/3_sorted_bam/${SAMPLELANE}_L003.sorted.bam \
+      I=/home/rorton/scratch/genetic_load/3_sorted_bam/${SAMPLELANE}_L004.sorted.bam \
+      O=/home/rorton/scratch/genetic_load/4_sorted_merged_bam/${SAMPLE}.sorted.bam
+
+
+
+###########################################
+###     step 5. mark duplicates        ###
+###########################################
+
+#!/bin/bash
+
+#SBATCH --time=24:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=60G
+#SBATCH --array=1-34
+
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/all_sample_ID.txt)
+
+module load picard
+module load gatk
+
+gatk --java-options "-Xmx8g -Xms8g" MarkDuplicates I=/home/rorton/scratch/genetic_load/4_sorted_merged_bam/${SAMPLE}.sorted.bam O=/home/rorton/scratch/genetic_load/5_duplicates_marked_bam/${SAMPLE}.markdup.bam REMOVE_DUPLICATES=false M=/home/rorton/scratch/genetic_load/5b_duplicates_marked.metrics/${SAMPLE}_mark.dup.metrics.txt
+
+
+
+###########################################
+###     step 5b. index new bam file     ###
+###########################################
+
+#!/bin/bash
+
+#SBATCH --time=24:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+#SBATCH --array=1-34
+
+
+SAMPLE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/all_sample_ID.txt)
+
+module load samtools
+
+samtools index /home/rorton/scratch/genetic_load/5_duplicates_marked_bam/${SAMPLE}.markdup.bam
+##########################################
+
+
+
+
+###########################################
+### step 5c. get mapping quality stats  ###
+###########################################
+
+#!/bin/bash
+
+#SBATCH --time=6:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=125G
+#SBATCH --array=1-35%15
+
+
+
+
+
+###########################################
+###    step 6. Haplotype caller        ###
+###########################################
+
+#!/bin/bash
+#SBATCH --account=def-frasiert
+#SBATCH --array=1-816%40
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+#SBATCH --time=24:00:00
+
+module load gatk
+module load samtools
+
+FILE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/scaffold_by_sample.list)
+
+SAMPLE=$(echo $FILE | awk '{print $1}')
+SCAFFOLD=$(echo $FILE | awk '{print $2}')
+
+gatk HaplotypeCaller \
+	-R /home/rorton/scratch/blue_whale_reference/genome/BW_karyotyoe_reference.fasta \
+	-I /home/rorton/scratch/genetic_load/5_duplicates_marked_bam/${SAMPLE}.markdup.bam \
+	-O /home/rorton/scratch/genetic_load/6_indv_gvcf/${SAMPLE}.${SCAFFOLD}.raw.snps.indels.g.vcf.gz \
+	--ERC GVCF \
+	-L $SCAFFOLD \
+	2> /home/rorton/scratch/genetic_load/6b_gvcf_QC/$SAMPLE-$SCAFFOLD-hapcall-gvcf.out
+
+
+
+###########################################
+###         step 7. Combine gVCF        ###
+###########################################
+
+
+#!/bin/bash
+
+#SBATCH --time=48:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --array=1-24
+
+module load gatk
+
+SCAFFOLD=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/karyotype.txt)
+
+gatk CombineGVCFs \
+   -R /home/rorton/scratch/blue_whale_reference/genome/BW_karyotyoe_reference.fasta \
+   -V /home/rorton/scratch/genetic_load/_text_files/scaffold_lists/${SCAFFOLD}.list
+   -O /home/rorton/scratch/genetic_load/7_combined_gvcf/${SCAFFOLD}.raw.snps.indels.g.vcf.gz
+  
+  
+
+
+###########################################
+###       step 8. Genotype GVCF         ###
+###########################################
+
+
+#!/bin/bash
+
+#SBATCH --time=60:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=125G
+#SBATCH --array=1-24
+
+module load gatk
+
+SCAFFOLD=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/karyotype.txt)
+
+gatk --java-options "-Xmx8g -Xms8g" GenotypeGVCFs \
+	-R /home/rorton/scratch/blue_whale_reference/genome/BW_karyotyoe_reference.fasta \
+	-V /home/rorton/scratch/genetic_load/7_combined_gvcf/${SCAFFOLD}.raw.snps.indels.g.vcf.gz \
+	--tmp-dir /home/rorton/scratch/_temp \
+	-all-sites \
+    -O /home/rorton/scratch/genetic_load/8_all_sites_genotyped_gvcf/${SCAFFOLD}.raw.snps.indels.g.vcf.gz
+
+
+
+###################################################
+### step 9a. set filter gVCFs and mask repeats ###
+###################################################
+
+#!/bin/bash
+
+#SBATCH --time=04:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=25G
+#SBATCH --array=1-24
+
+module load gatk
+
+SCAFFOLD=$(sed -n "${SLURM_ARRAY_TASK_ID}p" /home/rorton/scratch/genetic_load/_text_files/karyotype.txt)
+
+gatk VariantFiltration \
+    -V /home/rorton/scratch/genetic_load/8_all_sites_genotyped_gvcf/${SCAFFOLD}.raw.snps.indels.g.vcf.gz \
+    -filter "QD < 2.0" --filter-name "QD2" \
+    -filter "QUAL < 30.0" --filter-name "QUAL30" \
+    -filter "SOR > 3.0" --filter-name "SOR3" \
+    -filter "FS > 60.0" --filter-name "FS60" \
+    -filter "MQ < 40.0" --filter-name "MQ40" \
+    -filter "MQRankSum < -12.5" --filter-name "MQRankSum-12.5" \
+    -filter "ReadPosRankSum < -8.0" --filter-name "ReadPosRankSum-8" \
+    -O /home/rorton/scratch/withMinkeReference/7_filter_set_gVCF/${SCAFFOLD}.filter_set.g.vcf
+
+
+
+#######################################################
+###   step 10b. merge/concatenate GVCFs to final    ###
+#######################################################
+
+#!/bin/bash
+
+#SBATCH --time=12:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+
+module load bcftools
+load tabix
+
+bcftools concat -o /home/rorton/scratch/genetic_load/10_all_sites_GVCF/RW_BH.filters_set.snps.indels.all_sites.g.vcf NC_001601.1.raw.snps.indels.g.vcf.gz  NC_045792.1.raw.snps.indels.g.vcf.gz  NC_045800.1.raw.snps.indels.g.vcf.gz NC_045785.1.raw.snps.indels.g.vcf.gz  NC_045793.1.raw.snps.indels.g.vcf.gz  NC_045801.1.raw.snps.indels.g.vcf.gz NC_045786.1.raw.snps.indels.g.vcf.gz  NC_045794.1.raw.snps.indels.g.vcf.gz  NC_045802.1.raw.snps.indels.g.vcf.gz NC_045787.1.raw.snps.indels.g.vcf.gz  NC_045795.1.raw.snps.indels.g.vcf.gz  NC_045803.1.raw.snps.indels.g.vcf.gz NC_045788.1.raw.snps.indels.g.vcf.gz  NC_045796.1.raw.snps.indels.g.vcf.gz  NC_045804.1.raw.snps.indels.g.vcf.gz NC_045789.1.raw.snps.indels.g.vcf.gz  NC_045797.1.raw.snps.indels.g.vcf.gz  NC_045805.1.raw.snps.indels.g.vcf.gz NC_045790.1.raw.snps.indels.g.vcf.gz  NC_045798.1.raw.snps.indels.g.vcf.gz  NC_045806.1.raw.snps.indels.g.vcf.gz NC_045791.1.raw.snps.indels.g.vcf.gz  NC_045799.1.raw.snps.indels.g.vcf.gz  NC_045807.1.raw.snps.indels.g.vcf.gz
+ 
+
+###### 
+
+bgzip /home/rorton/scratch/genetic_load/10_all_sites_GVCF/RW_BH.filters_set.snps.indels.all_sites.g.vcf
+tabix /home/rorton/scratch/genetic_load/10_all_sites_GVCF/RW_BH.filters_set.snps.indels.all_sites.g.vcf.gz
+
+bcftools plugin counts
+
+##### mask repeats 
+
+#!/bin/bash
+
+#SBATCH --time=24:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load vcftools
+
+vcftools --gzvcf RW_BH.filters_set.snps.indels.all_sites.g.vcf.gz --exclude-bed /home/rorton/scratch/blue_whale_reference/genome/repeats.bed --recode --recode-INFO-all --out RW_BH.RM.snps.indels.all_sites.g
+##################################
+
+
+
+########################################################################
+###  split gVCF into genomic regions (y, X, autosome, mt) and filter ###
+########################################################################
+
+########################
+### For y chromosome ###
+########################
+
+bcftools view RW_BH.filters_set.snps.indels.all_sites.g.vcf.gz --regions NC_045807.1 -O z -o ../y_GVCF/y.all_sites.g.vcf.gz
+bcftools plugin counts y.all_sites.g.vcf.gz
+
+Number of samples: 34
+Number of SNPs:    68335
+Number of INDELs:  9345
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   2349494
+
+tabix y.all_sites.g.vcf.gz
+
+
+## remove any females ##
+vcftools --gzvcf y.all_sites.filtered.g.vcf.gz --keep /home/rorton/scratch/genetic_load/_text_files/males_list.txt --recode --recode-INFO-all --out y.all_sites.filtered.noFEM
+mv y.all_sites.filtered.noFEM.recode.vcf y.all_sites.filtered.noFEM.vcf
+bcftools plugin counts y.all_sites.filtered.noFEM.vcf
+
+Number of samples: 15
+Number of SNPs:    52616
+Number of INDELs:  470
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   60877
+
+bcftools view --threads 16 -M2 y.all_sites.filtered.noFEM.vcf -o y.all_sites.filtered.noFEM.biallelic.vcf
+
+bcftools plugin counts y.all_sites.filtered.noFEM.biallelic.vcf
+
+## keep only biallelic ##
+Number of samples: 15
+Number of SNPs:    50836
+Number of INDELs:  0
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   59001
+ 
+
+bcftools filter -e 'GT=="het"' -o y.all_sites.filtered.noFEM.biallelic.noHET.vcf y.all_sites.filtered.noFEM.biallelic.vcf
+
+
+bcftools plugin counts y.all_sites.filtered.noFEM.biallelic.noHET.vcf
+Number of samples: 15
+Number of SNPs:    40120
+Number of INDELs:  0
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   48285
+
+
+## filter on read depth, remove < 5 ##
+bcftools filter --threads 16 -e 'FORMAT/DP<5' --set-GTs . -O z -o y.all_sites.filtered.noFEM.biallelic.noHET.5.vcf.gz y.all_sites.filtered.noFEM.biallelic.noHET.vcf
+
+bcftools plugin counts y.all_sites.filtered.noFEM.biallelic.noHET.5.vcf.gz
+
+Number of samples: 15
+Number of SNPs:    40120
+Number of INDELs:  0
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   48285
+
+
+
+## get missing data er individual 
+vcftools --gzvcf y.all_sites.filtered.noFEM.biallelic.noHET.5.vcf.gz --missing-indv
+
+## filter out any sites with more than 25% missing data
+vcftools --gzvcf y.all_sites.filtered.noFEM.biallelic.noHET.5.vcf.gz --max-missing .75 --recode --recode-INFO-all --out y.test
+
+## filter on read depth
+vcftools --gzvcf y.all_sites.filtered.noFEM.biallelic.vcf --min-meanDP 7 --max-meanDP 48 --recode --recode-INFO-all --out y.all_sites.filtered.noFEM.depths
+bgzip y.all_sites.filtered.noFEM.biallelic.5.noHET.vcf
+plink --vcf y.all_sites.filtered.noFEM.biallelic.5.noHET.vcf.gz --recode --allow-extra-chr --out y.all_sites.filtered.noFEM.biallelic.5.noHET
+
+
+
+######################################
+###      For X chromosome          ###
+######################################
+
+
+### isolate X chromosome from genome ###
+
+bcftools view RW_BH.filters_set.snps.indels.all_sites.g.vcf.gz --regions NC_045806.1 -O z -o ../X_GVCF/X.all_sites.g.vcf.gz
+bcftools plugin counts X.all_sites.g.vcf.gz
+
+Number of samples: 34
+Number of SNPs:    3621269
+Number of INDELs:  484894
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   128877148
+
+tabix X.all_sites.g.vcf.gz
+
+
+### filter low quality sites and indels (this does not appear to remove multi-allelic indels) ###
+
+gatk SelectVariants \
+    -R /home/rorton/scratch/blue_whale_reference/genome/BW_karyotyoe_reference.fasta \
+    -V X.all_sites.g.vcf.gz \
+    --exclude-filtered \
+    --select-type-to-exclude INDEL \
+    -O X.all_sites.filtered.g.vcf.gz
+
+bcftools plugin counts X.all_sites.filtered.g.vcf.gz
+
+### remove indels ###
+Number of samples: 34
+Number of SNPs:    2871268
+Number of INDELs:  29638
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   4714369
+
+
+###### exclude heterozygous male genotypes in several steps #####
+
+## remove any females (and rename vcf) ##
+vcftools --gzvcf X.all_sites.filtered.g.vcf.gz --keep /home/rorton/scratch/genetic_load/_text_files/males_list.txt --recode --recode-INFO-all --out X.males
+mv X.males.recode.vcf X.males.vcf
+
+## use grep to check for genotypes ##
+
+
+bcftools plugin counts X.males.vcf
+
+Number of samples: 15
+Number of SNPs:    2871268
+Number of INDELs:  29638
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   4714369
+
+bgzip X.males.vcf
+
+## include ONLY heterozygous genotypes ##
+bcftools filter -i 'GT=="het"' -o X.males.HET.vcf.gz X.males.vcf.gz
+
+## create a list of the heterozygous sites ##
+
+vcftools --gzvcf X.males.HET.vcf.gz --kept-sites --out males.HET
+
+vcftools --gzvcf X.all_sites.filtered.g.vcf.gz --exclude-positions males.HET.kept.sites --recode --recode-INFO-all --out X.all_sites.filtered.noHETmales
+
+
+## change name ##
+
+mv X.all_sites.filtered.noHETmales.recode.vcf X.all_sites.filtered.noHETmales.vcf
+
+## check with grep ##
+
+vcftools --vcf X.all_sites.filtered.noHETmales.vcf --keep /home/rorton/scratch/genetic_load/_text_files/males_list.txt --recode --recode-INFO-all --out test
+
+bgzip X.all_sites.filtered.noHETmales.vcf
+
+bcftools plugin counts X.all_sites.filtered.noHETmales.vcf.gz
+
+Number of samples: 34
+Number of SNPs:    2210775
+Number of INDELs:  12723
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   4051016
+
+
+### filter out multi-allelic sites ###
+
+bcftools view --threads 16 -M2 X.all_sites.filtered.noHETmales.vcf.gz -o X.all_sites.filtered.noHETmales.biallelic.vcf.gz
+
+bcftools plugin counts X.all_sites.filtered.noHETmales.biallelic.vcf.gz
+
+Number of samples: 34
+Number of SNPs:    2167353
+Number of INDELs:  0
+Number of MNPs:    0
+Number of others:  0
+Number of sites:   4004569
+
+
+## filter on read depth, remove below 11 and above 48 ##
+
+bcftools filter --threads 16 -e 'FORMAT/DP<11' --set-GTs . -O z -o X.all_sites.filtered.noHETmales.biallelic.11.vcf.gz X.all_sites.filtered.noHETmales.biallelic.vcf.gz
+bcftools filter --threads 16 -e 'FORMAT/DP>48' --set-GTs . -O z -o X.all_sites.filtered.noHETmales.biallelic.11.48.vcf.gz X.all_sites.filtered.noHETmales.biallelic.11.vcf.gz
+
+
+###############################################################################################
+##** note, this is a two million + hemizygous chromosome with no heterozygous males **##
+##** can double check by excluding females, then getting including only heterozygous sites, then get a list of those sites **##
+
+vcftools --gzvcf X.all_sites.filtered.noHETmales.biallelic.11.48.vcf.gz --keep /home/rorton/scratch/genetic_load/_text_files/males_list.txt --recode --recode-INFO-all --out test.malesonly
+bcftools filter -i 'GT=="het"' test.recode.vcf -o test.noHET.recode.vcf 
+vcftools --gzvcf test.noHET.recode.vcf  --kept-sites --out TEST_list
+
+### list should be empty ####
+##** After filtering, kept 0 out of a possible 0 Sites **##
+###############################################################################################
+
+
+plink --vcf X.all_sites.filtered.noHETmales.biallelic.11.48.vcf.gz --recode --allow-extra-chr --out X.all_sites.filtered.noHETmales.biallelic.11.48
+
+
+
+##########################
+### find PAR ### ?????? ##
+##########################
+
+# From here we need to modify this list to not inlcude the recent stratum or PAR using the following:
+
+awk '{ if($2 <= 98000000) { print }}' Female.HET.list.kept.sites > Female.HET.list.kept.sites.exclude.recent.stratum.PAR
+
+Now we can exclude female heterzygous Z chromosome sites using the following scripts.
+
+vcftools --gzvcf X.all_sites.g.vcf.gz --exclude-positions male.HET.list.kept.sites --recode --recode-INFO-all --out X.maleHet.masked.g.vcf
+
+
+So at the end of this we now have a gVCF that includes only biallelic SNPs, excludes high coverage calls, excludes no repeat regions or female heterozygous sites on the Z.
+
+
+
+##########################
+###  Females only gvcf  ##
+##########################
+
+vcftools --gzvcf /home/rorton/scratch/genetic_load/X_GVCF/X.all_sites.filtered.noHETmales.biallelic.11.48.vcf.gz --keep /home/rorton/scratch/genetic_load/_text_files/females_list.txt --recode --recode-INFO-all --out X.all_sites.filtered.FEM.biallelic.11.48
+
+
+mv X.all_sites.filtered.FEM.biallelic.11.48.recode.vcf X.all_sites.filtered.FEM.biallelic.11.48.vcf
+bgzip X.all_sites.filtered.FEM.biallelic.11.48.vcf
+tabix X.all_sites.filtered.FEM.biallelic.11.48.vcf.gz
+
+plink --vcf X.all_sites.filtered.FEM.biallelic.11.48.vcf.gz --recode --allow-extra-chr --out X.all_sites.filtered.FEM.biallelic.11.48
+
+
+
+###########################
+###  NARW Females only   ##
+###########################
+
+vcftools --gzvcf /home/rorton/scratch/genetic_load/X_GVCF/X.all_sites.filtered.noHETmales.biallelic.11.48.vcf.gz --keep /home/rorton/scratch/genetic_load/_text_files/females_list.txt --recode --recode-INFO-all --out X.all_sites.filtered.FEM.biallelic.11.48
+
+
+mv X.all_sites.filtered.FEM.biallelic.11.48.recode.vcf X.all_sites.filtered.FEM.biallelic.11.48.vcf
+bgzip X.all_sites.filtered.FEM.biallelic.11.48.vcf
+tabix X.all_sites.filtered.FEM.biallelic.11.48.vcf.gz
+
+plink --vcf X.all_sites.filtered.FEM.biallelic.11.48.vcf.gz --recode --allow-extra-chr --out X.all_sites.filtered.FEM.biallelic.11.48
+
+
+
+######################################
+###          For Autosomes         ###
+######################################
+
+#!/bin/bash
+
+#SBATCH --time=48:00:00
+#SBATCH --account=def-frasiert
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+
+module load gatk
+module load bcftools
+module load tabix
+module load plink/1.9b_6.21-x86_64
+
+
+bcftools view /home/rorton/scratch/genetic_load/10_all_sites_GVCF/RW_BH.filters_set.snps.indels.all_sites.g.vcf.gz --regions NC_045785.1,NC_045786.1,NC_045787.1,NC_045788.1,NC_045789.1,NC_045790.1,NC_045791.1,NC_045792.1,NC_045793.1,NC_045794.1,NC_045795.1,NC_045796.1,NC_045797.1,NC_045798.1,NC_045799.1,NC_045800.1,NC_045801.1,NC_045802.1,NC_045803.1,NC_045804.1,NC_045805.1 -O z -o autosomes.filters_set.snps.indels.all_sites.g.vcf.gz
+
+bcftools plugin counts autosomes.filters_set.snps.indels.all_sites.g.vcf.gz > autosomes.filters_set.snps.indels.all_sites.counts
+
+tabix autosomes.filters_set.snps.indels.all_sites.g.vcf.gz
+
+gatk SelectVariants \
+    -R /home/rorton/scratch/blue_whale_reference/genome/BW_karyotyoe_reference.fasta \
+    -V autosomes.filters_set.snps.indels.all_sites.g.vcf.gz \
+    --exclude-filtered \
+    --select-type-to-exclude INDEL \
+    -O autosomes.all_sites.snps.filtered.g.vcf.gz
+
+bcftools plugin counts autosomes.all_sites.snps.filtered.g.vcf.gz > autosomes.all_sites.snps.filtered.counts
+
+
+bcftools view --threads 16 -M2 autosomes.all_sites.snps.filtered.g.vcf.gz -o autosomes.all_sites.snps.filtered.biallelic.g.vcf.gz
+
+bcftools plugin counts autosomes.all_sites.snps.filtered.biallelic.g.vcf.gz > autosomes.all_sites.snps.filtered.biallelic.counts
+
+## filter on read depth, exclude < 11 and > 48 ##
+
+bcftools filter --threads 16 -e 'FORMAT/DP<11' --set-GTs . -O z -o autosomes.all_sites.snps.filtered.biallelic.11.g.vcf.gz autosomes.all_sites.snps.filtered.biallelic.g.vcf.gz
+bcftools filter --threads 16 -e 'FORMAT/DP>48' --set-GTs . -O z -o autosomes.all_sites.snps.filtered.biallelic.11.48.g.vcf.gz autosomes.all_sites.snps.filtered.biallelic.11.g.vcf.gz
+
+
+### get final counts and tab index gVCF ###
+bcftools plugin counts autosomes.all_sites.snps.filtered.biallelic.11.48.g.vcf.gz > autosomes.all_sites.snps.filtered.biallelic.11.48.counts
+tabix autosomes.all_sites.snps.filtered.biallelic.11.48.g.vcf.gz
+
+
+ 
+
+
